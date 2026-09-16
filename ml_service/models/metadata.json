@@ -1,0 +1,28 @@
+{
+  "features": [
+    "age",
+    "gender_encoded",
+    "caste_encoded",
+    "annual_income",
+    "loan_amount",
+    "credit_score",
+    "prior_default",
+    "has_business_plan",
+    "experience_years",
+    "dti_ratio"
+  ],
+  "gender_map": {
+    "Female": 0,
+    "Male": 1,
+    "Other": 2
+  },
+  "caste_map": {
+    "SC": 0,
+    "ST": 1,
+    "OBC": 2,
+    "EWS": 3,
+    "General": 4
+  },
+  "accuracy": 0.8988,
+  "roc_auc": 0.9711
+}
