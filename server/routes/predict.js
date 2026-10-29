@@ -4,6 +4,8 @@ const axios = require('axios');
 const Scheme = require('../models/Scheme');
 const Prediction = require('../models/Prediction');
 const { optionalAuth, protect } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const { predictSchema } = require('../validators/predictValidator');
 
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://127.0.0.1:5001';
 
@@ -87,7 +89,7 @@ const fallbackPrediction = (inputs) => {
 
 // @route   POST /api/predict
 // @desc    Predict loan approval odds & recommend tailored government schemes
-router.post('/', optionalAuth, async (req, res) => {
+router.post('/', optionalAuth, validate(predictSchema), async (req, res) => {
   try {
     const {
       age = 28,

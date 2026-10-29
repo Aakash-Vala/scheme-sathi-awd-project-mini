@@ -3,6 +3,12 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { protect } = require('../middleware/auth');
+const validate = require('../middleware/validate');
+const {
+  registerSchema,
+  loginSchema,
+  profileUpdateSchema,
+} = require('../validators/authValidator');
 
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET || 'schemesathi_secure_jwt_token_key_2026_awd', {
@@ -12,7 +18,7 @@ const generateToken = (id) => {
 
 // @route   POST /api/auth/register
 // @desc    Register a new user
-router.post('/register', async (req, res) => {
+router.post('/register', validate(registerSchema), async (req, res) => {
   try {
     const { name, email, password, caste, gender, age, annualIncome, state, occupation } = req.body;
 
@@ -63,7 +69,7 @@ router.post('/register', async (req, res) => {
 
 // @route   POST /api/auth/login
 // @desc    Authenticate user & get token
-router.post('/login', async (req, res) => {
+router.post('/login', validate(loginSchema), async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -127,7 +133,7 @@ router.get('/me', protect, async (req, res) => {
 
 // @route   PUT /api/auth/profile
 // @desc    Update user demographic profile
-router.put('/profile', protect, async (req, res) => {
+router.put('/profile', protect, validate(profileUpdateSchema), async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ error: 'User not found' });

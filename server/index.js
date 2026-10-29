@@ -1,12 +1,19 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const connectDB = require('./config/db');
 
 // Connect to MongoDB
 connectDB();
 
 const app = express();
+
+// Security HTTP headers
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
 
 // Middleware
 app.use(cors({
