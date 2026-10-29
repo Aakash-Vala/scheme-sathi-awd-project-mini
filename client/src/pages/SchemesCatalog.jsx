@@ -15,10 +15,11 @@ import {
   Info,
   DollarSign,
   ShieldCheck,
-  ChevronRight
+  ChevronRight,
+  Sparkles
 } from 'lucide-react';
 
-const SchemesCatalog = ({ initialSelectedId, onClearSelectedId, setActiveTab }) => {
+const SchemesCatalog = ({ initialSelectedId, onClearSelectedId, setActiveTab, onPredictScheme }) => {
   const { user, isSchemeSaved, toggleSaveScheme } = useAuth();
 
   const [schemes, setSchemes] = useState([]);
@@ -259,8 +260,20 @@ const SchemesCatalog = ({ initialSelectedId, onClearSelectedId, setActiveTab }) 
                     onClick={() => setActiveScheme(scheme)}
                     className="btn-action flex-1 py-2 px-3 text-xs rounded-xl flex items-center justify-center gap-1 group"
                   >
-                    <span>Full Guidelines & Documents</span>
+                    <span>Guidelines</span>
                     <ChevronRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-1" />
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (onPredictScheme) onPredictScheme(scheme);
+                      else setActiveTab('predictor');
+                    }}
+                    className="btn-action py-2 px-3 text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm"
+                    title="Evaluate approval likelihood for this scheme"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-teal-700 dark:text-[#94ffdb]" />
+                    <span>Predict</span>
                   </button>
                 </div>
 
@@ -413,12 +426,18 @@ const SchemesCatalog = ({ initialSelectedId, onClearSelectedId, setActiveTab }) 
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
+                    const target = activeScheme;
                     setActiveScheme(null);
-                    setActiveTab('predictor');
+                    if (onPredictScheme) {
+                      onPredictScheme(target);
+                    } else {
+                      setActiveTab('predictor');
+                    }
                   }}
-                  className="btn-action px-4 py-2 rounded-xl text-xs shadow-sm"
+                  className="btn-action px-4 py-2 rounded-xl text-xs shadow-sm flex items-center gap-1.5"
                 >
-                  Predict Approval For This Scheme
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Predict Approval For This Scheme</span>
                 </button>
               </div>
             </div>

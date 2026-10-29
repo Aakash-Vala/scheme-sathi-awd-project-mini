@@ -17,7 +17,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-const Dashboard = ({ setActiveTab, onSelectScheme }) => {
+const Dashboard = ({ setActiveTab, onSelectScheme, onPredictScheme }) => {
   const { user, refreshUser, toggleSaveScheme } = useAuth();
   const [history, setHistory] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -190,6 +190,18 @@ const Dashboard = ({ setActiveTab, onSelectScheme }) => {
                     className="btn-action flex-1 py-1.5 px-2.5 rounded-lg text-xs text-center shadow-sm"
                   >
                     View Guidelines
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      if (onPredictScheme) onPredictScheme(scheme);
+                      else setActiveTab('predictor');
+                    }}
+                    className="btn-action py-1.5 px-2.5 rounded-lg text-xs flex items-center justify-center gap-1 shadow-sm"
+                    title="Predict approval for this scheme"
+                  >
+                    <Sparkles className="w-3 h-3 text-teal-700 dark:text-[#94ffdb]" />
+                    <span>Predict</span>
                   </button>
                 </div>
               </div>

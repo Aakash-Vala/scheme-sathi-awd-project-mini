@@ -18,7 +18,7 @@ import {
   Layers
 } from 'lucide-react';
 
-const Predictor = ({ setActiveTab, onSelectScheme }) => {
+const Predictor = ({ setActiveTab, onSelectScheme, targetScheme, onClearTargetScheme }) => {
   const { user, isSchemeSaved, toggleSaveScheme } = useAuth();
 
   // Form State
@@ -39,9 +39,26 @@ const Predictor = ({ setActiveTab, onSelectScheme }) => {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
 
-  // Auto-fill from user profile if available
+  const executePrediction = async (dataToPredict) => {
+    setLoading(true);
+    setError('');
+
+    try {
+      const res = await axios.post('/api/predict', dataToPredict);
+      if (res.data.success) {
+        setResult(res.data);
+      }
+    } catch (err) {
+      console.error('Prediction request error:', err);
+      setError('Unable to complete AI evaluation. Please verify your server connection.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Auto-fill from user profile if available (only if no target scheme was explicitly passed)
   useEffect(() => {
-    if (user) {
+    if (user && !targetScheme) {
       setFormData(prev => ({
         ...prev,
         age: user.age || prev.age,
@@ -51,6 +68,38 @@ const Predictor = ({ setActiveTab, onSelectScheme }) => {
       }));
     }
   }, [user]);
+
+  // When a target scheme is selected, adapt inputs and automatically evaluate
+  useEffect(() => {
+    if (targetScheme) {
+      const schemeMaxLoan = targetScheme.maxLoanAmount || 500000;
+      const initialLoan = Math.min(formData.loan_amount || 150000, schemeMaxLoan);
+
+      let targetGender = formData.gender;
+      if (targetScheme.eligibility?.gender && targetScheme.eligibility.gender !== 'All') {
+        targetGender = targetScheme.eligibility.gender;
+      }
+
+      let targetCaste = formData.caste;
+      if (
+        targetScheme.eligibility?.casteAllowed &&
+        !targetScheme.eligibility.casteAllowed.includes('All') &&
+        !targetScheme.eligibility.casteAllowed.includes(formData.caste)
+      ) {
+        targetCaste = targetScheme.eligibility.casteAllowed[0] || formData.caste;
+      }
+
+      const adaptedData = {
+        ...formData,
+        loan_amount: initialLoan,
+        gender: targetGender,
+        caste: targetCaste,
+      };
+
+      setFormData(adaptedData);
+      executePrediction(adaptedData);
+    }
+  }, [targetScheme]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -62,21 +111,48 @@ const Predictor = ({ setActiveTab, onSelectScheme }) => {
 
   const handlePredict = async (e) => {
     if (e) e.preventDefault();
-    setLoading(true);
-    setError('');
-
-    try {
-      const res = await axios.post('/api/predict', formData);
-      if (res.data.success) {
-        setResult(res.data);
-      }
-    } catch (err) {
-      console.error('Prediction request error:', err);
-      setError('Unable to complete AI evaluation. Please verify your server connection.');
-    } finally {
-      setLoading(false);
-    }
+    await executePrediction(formData);
   };
+
+  // Statutory evaluation checks for the specific target scheme
+  const targetEligibilityChecks = targetScheme ? [
+    {
+      id: 'age',
+      label: 'Applicant Age Threshold',
+      passed: formData.age >= (targetScheme.eligibility?.minAge ?? 18) && formData.age <= (targetScheme.eligibility?.maxAge ?? 65),
+      detail: `Applicant: ${formData.age} yrs | Required: ${targetScheme.eligibility?.minAge ?? 18} - ${targetScheme.eligibility?.maxAge ?? 65} yrs`,
+    },
+    {
+      id: 'gender',
+      label: 'Gender Inclusivity',
+      passed: !targetScheme.eligibility?.gender || targetScheme.eligibility.gender === 'All' || targetScheme.eligibility.gender === formData.gender,
+      detail: `Applicant: ${formData.gender} | Guideline: ${targetScheme.eligibility?.gender || 'All'}`,
+    },
+    {
+      id: 'caste',
+      label: 'Affirmative Action / Caste Category',
+      passed: !targetScheme.eligibility?.casteAllowed || targetScheme.eligibility.casteAllowed.includes('All') || targetScheme.eligibility.casteAllowed.includes(formData.caste),
+      detail: `Applicant: ${formData.caste} | Eligible categories: ${targetScheme.eligibility?.casteAllowed?.join(', ') || 'All'}`,
+    },
+    {
+      id: 'income',
+      label: 'Annual Income Ceiling',
+      passed: !targetScheme.eligibility?.maxAnnualIncome || formData.annual_income <= targetScheme.eligibility.maxAnnualIncome,
+      detail: `Applicant: ₹${(formData.annual_income / 100000).toFixed(1)}L | Ceiling: ₹${((targetScheme.eligibility?.maxAnnualIncome || 10000000) / 100000).toFixed(1)}L`,
+    },
+    {
+      id: 'loan',
+      label: 'Requested Loan Amount',
+      passed: formData.loan_amount <= (targetScheme.maxLoanAmount || 10000000),
+      detail: `Requested: ₹${(formData.loan_amount / 100000).toFixed(1)}L | Cap: ₹${((targetScheme.maxLoanAmount || 0) / 100000).toFixed(1)}L`,
+    },
+  ] : [];
+
+  const isTargetStatutoryFit = targetEligibilityChecks.length > 0 && targetEligibilityChecks.every(c => c.passed);
+
+  const targetAnnualSavings = targetScheme
+    ? Math.max(0, Math.round(formData.loan_amount * ((11.5 - targetScheme.interestRate) / 100)))
+    : 0;
 
   return (
     <div className="space-y-8 py-4 max-w-7xl mx-auto">
@@ -118,6 +194,50 @@ const Predictor = ({ setActiveTab, onSelectScheme }) => {
       {error && (
         <div className="p-4 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-300 text-xs text-red-600 dark:text-red-400">
           {error}
+        </div>
+      )}
+
+      {/* Target Scheme Active Evaluation Banner */}
+      {targetScheme && (
+        <div className="p-5 rounded-2xl bg-teal-500/10 dark:bg-[#94ffdb]/10 border-2 border-[#94ffdb] shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fadeIn">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-[#94ffdb] text-teal-950 border border-teal-600/30 uppercase tracking-wider">
+                Target Scheme Under Evaluation
+              </span>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {targetScheme.code} • {targetScheme.category}
+              </span>
+            </div>
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white">
+              {targetScheme.name}
+            </h2>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+              <span>Subsidized Interest: <strong className="text-teal-700 dark:text-[#94ffdb]">{targetScheme.interestRate}% p.a.</strong></span>
+              <span>•</span>
+              <span>Max Loan Cap: <strong>₹{(targetScheme.maxLoanAmount / 100000).toFixed(1)}L</strong></span>
+              <span>•</span>
+              <span>Ministry: <strong>{targetScheme.ministry}</strong></span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => {
+                if (onSelectScheme) onSelectScheme(targetScheme._id);
+                setActiveTab('schemes');
+              }}
+              className="btn-action px-3.5 py-1.5 rounded-xl text-xs whitespace-nowrap shadow-sm"
+            >
+              View Guidelines
+            </button>
+            <button
+              onClick={onClearTargetScheme}
+              className="px-3.5 py-1.5 rounded-xl text-xs font-medium border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              Clear Target
+            </button>
+          </div>
         </div>
       )}
 
@@ -499,6 +619,87 @@ const Predictor = ({ setActiveTab, onSelectScheme }) => {
                 )}
               </div>
 
+              {/* Target Scheme Underwriting Verification Card */}
+              {targetScheme && (
+                <div className="p-6 rounded-2xl border-2 border-[#94ffdb] bg-white dark:bg-[#121824] shadow-sm space-y-5 animate-fadeIn">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-teal-700 dark:text-[#94ffdb]">
+                        Target Scheme Statutory Verification
+                      </span>
+                      <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                        {targetScheme.name}
+                      </h3>
+                    </div>
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-bold border ${
+                      isTargetStatutoryFit
+                        ? 'bg-teal-50 dark:bg-teal-950/40 text-teal-700 dark:text-[#94ffdb] border-[#94ffdb]'
+                        : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-300'
+                    }`}>
+                      {isTargetStatutoryFit ? 'Statutory Criteria Satisfied' : 'Criteria Adjustments Needed'}
+                    </span>
+                  </div>
+
+                  {/* Statutory Lending Rules Checklist */}
+                  <div className="space-y-2">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                      Statutory Lending Rules Checklist
+                    </span>
+                    <div className="grid grid-cols-1 gap-2">
+                      {targetEligibilityChecks.map((c) => (
+                        <div
+                          key={c.id}
+                          className={`p-2.5 rounded-xl border text-xs flex items-center justify-between gap-3 ${
+                            c.passed
+                              ? 'bg-teal-50/50 dark:bg-teal-950/20 border-teal-200 dark:border-teal-900/60'
+                              : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/60'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            {c.passed ? (
+                              <CheckCircle2 className="w-4 h-4 text-teal-600 dark:text-[#94ffdb] shrink-0" />
+                            ) : (
+                              <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                            )}
+                            <span className="font-semibold text-slate-900 dark:text-slate-100">{c.label}</span>
+                          </div>
+                          <span className="text-slate-500 dark:text-slate-400 text-right text-[11px]">
+                            {c.detail}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Financial Savings Highlight & Portal Link */}
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                        Est. Annual Interest Subsidy Savings
+                      </span>
+                      <span className="text-lg font-black text-teal-700 dark:text-[#94ffdb]">
+                        ₹{targetAnnualSavings.toLocaleString('en-IN')} / year
+                      </span>
+                      <p className="text-[10px] text-slate-500">
+                        Calculated against 11.5% APR commercial benchmark borrowing rate.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <a
+                        href={targetScheme.officialUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-action px-4 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+                      >
+                        <span>Apply on Official Portal</span>
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Matched Real-World Schemes */}
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -522,17 +723,27 @@ const Predictor = ({ setActiveTab, onSelectScheme }) => {
                 <div className="grid grid-cols-1 gap-3">
                   {result.matchedSchemes?.map((scheme) => {
                     const saved = isSchemeSaved(scheme.schemeId);
+                    const isTarget = targetScheme && (targetScheme._id === scheme.schemeId || targetScheme.code === scheme.code);
 
                     return (
                       <div
                         key={scheme.schemeId}
-                        className="p-4 rounded-xl bg-white dark:bg-[#121824] border border-[#ffb0e7] hover:border-[#94ffdb] transition-all shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                        className={`p-4 rounded-xl bg-white dark:bg-[#121824] border transition-all shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                          isTarget
+                            ? 'border-2 border-[#94ffdb] ring-2 ring-[#94ffdb]/20'
+                            : 'border-[#ffb0e7] hover:border-[#94ffdb]'
+                        }`}
                       >
                         <div className="space-y-1 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#94ffdb]/30 text-teal-950 dark:text-[#94ffdb] border border-[#ffb0e7]">
                               {scheme.code}
                             </span>
+                            {isTarget && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#94ffdb] text-teal-950">
+                                Target Scheme
+                              </span>
+                            )}
                             <span className="text-xs text-slate-400 font-medium">
                               {scheme.category}
                             </span>
@@ -610,13 +821,21 @@ const Predictor = ({ setActiveTab, onSelectScheme }) => {
           ) : (
             <div className="p-12 rounded-2xl border-2 border-dashed border-[#ffb0e7] bg-white dark:bg-[#121824] text-center space-y-3">
               <div className="w-12 h-12 rounded-full bg-[#94ffdb]/30 border border-[#ffb0e7] flex items-center justify-center mx-auto text-slate-700 dark:text-slate-300">
-                <Sparkles className="w-6 h-6 text-teal-600 dark:text-[#94ffdb]" />
+                {loading ? (
+                  <RefreshCw className="w-6 h-6 text-teal-600 dark:text-[#94ffdb] animate-spin" />
+                ) : (
+                  <Sparkles className="w-6 h-6 text-teal-600 dark:text-[#94ffdb]" />
+                )}
               </div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Ready for Evaluation
+                {loading
+                  ? (targetScheme ? `Evaluating Underwriting Likelihood for ${targetScheme.name}...` : 'Evaluating ML Underwriting Profile...')
+                  : 'Ready for Evaluation'}
               </h3>
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                Adjust the underwriting parameters on the left and click "Evaluate Scheme Eligibility" to generate the ML prediction and matched schemes.
+                {loading
+                  ? 'Simulating Random Forest inference and statutory rule matching against MongoDB scheme records.'
+                  : 'Adjust the underwriting parameters on the left and click "Evaluate Scheme Eligibility" to generate the ML prediction and matched schemes.'}
               </p>
             </div>
           )}
